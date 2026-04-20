@@ -2,65 +2,61 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const path = require("path");
-const bodyParser = require("body-parser");
-const expressErrorHandler = require("express-error-handler");
+// Note: body-parser and express-error-handler were removed (see explanation below)
 
-// Make Express Servers 
-const app = express(); // 3000: Todo, Weather
-const chatApp = express(); // 3001: Chat
+// Initialize Express Apps
+const app = express();      // Port 3000: Todo, Weather
+const chatApp = express();  // Port 3001: Chat
 
-// Chat Server Setting - View, Static Files
+// --- Chat Server Settings ---
 const http = require("http").createServer(chatApp);
 const io = require("socket.io")(http);
-module.exports = io; // to Controller
+module.exports = io; // Exported to use in Controllers
 
 chatApp.set("view engine", "ejs");
 chatApp.engine("html", require("ejs").renderFile);
-chatApp.set("views", path.join(__dirname, 'views'));
+chatApp.set("views", path.join(__dirname, "views"));
+chatApp.use("/public", express.static(path.join(__dirname, "public")));
 
-chatApp.use("/public", express.static(__dirname + '/public'));
-
-
-// Server Setting - View, Static Files, Body Parser
+// --- Main Server Settings ---
 app.set("view engine", "ejs");
-app.set("views", path.join(__dirname, 'views'));
+app.set("views", path.join(__dirname, "views"));
+app.use("/public", express.static(path.join(__dirname, "public")));
 
-app.use("/public", express.static(__dirname + '/public'));
+// Use Express's built-in body parsing (replaces body-parser)
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
-app.use(bodyParser.urlencoded({extended: false}));
-app.use(bodyParser.json());
-
-
-// Router Setting
+// --- Router Settings ---
 const router = require("./routes/index");
 chatApp.use(router);
 app.use(router);
 
-// Error Handling
-var errorHandler = expressErrorHandler({
- static: {
-   '404': './views/404.html'
- }
-});
-app.use(expressErrorHandler.httpError(404));
-app.use(errorHandler);
-chatApp.use(expressErrorHandler.httpError(404));
-chatApp.use(errorHandler);
+// --- Modern 404 Error Handling ---
+// Replaces the outdated express-error-handler package
+const notFoundHandler = (req, res, next) => {
+    res.status(404).sendFile(path.join(__dirname, "views", "404.html"));
+};
 
-// Chat Server Open
+app.use(notFoundHandler);
+chatApp.use(notFoundHandler);
+
+// --- Start Chat Server ---
 http.listen(3001, () => {
     console.log("Chat Server listening on port 3001!");
-})
-
-// Connect to DB
-mongoose.connect("mongodb://localhost:27017/node", function(err){
-    if(err){
-        console.error("mongoDB Connection Error!", err);
-    }
-    console.log("mongoDB Connected!");
-    
-    // Server Open
-    app.listen(3000, function(){
-        console.log("Server listening on port 3000!");
-    });
 });
+
+// --- Connect to Database & Start Main Server ---
+// Updated Mongoose connection to use Promises instead of deprecated callbacks
+mongoose.connect("mongodb://localhost:27017/node")
+    .then(() => {
+        console.log("mongoDB Connected!");
+
+        // Start main server only after DB connects successfully
+        app.listen(3000, () => {
+            console.log("Server listening on port 3000!");
+        });
+    })
+    .catch((err) => {
+        console.error("mongoDB Connection Error!", err);
+    });
